@@ -1,0 +1,50 @@
+# This is the main workflow file. It is run every time a PR is opened or merged
+# Required env:
+# GCLOUD_SA_KEY_DEV
+# GCLOUD_SA_KEY_PREPROD
+# GCLOUD_SA_KEY_PROD
+# GCLOUD_DEV_PROJECT_ID
+# GCLOUD_PREPROD_PROJECT_ID
+# GCLOUD_PROD_PROJECT_ID
+# APP_NAME
+# USERNAME_CHART_MUSEUM
+# PASSWORD_CHART_MUSEUM
+# CHART_MUSEUM_URL
+# NPM_TOKEN
+
+name: Main workflow
+on:
+  - pull_request    
+  - push
+jobs:
+  main_workflow:
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout the repository
+      - uses: actions/checkout@v2
+      # Setup the node environment
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v1
+        with:
+          node-version: 12.x
+      # Copy NPM_TOKEN to install private dependencies
+      - name: Use NPM Token with organization read access
+        uses: dkershner6/use-npm-token-action@v1
+        with:
+          token: "${{ secrets.NPM_TOKEN }}"
+      # Install dependencies
+      - run: npm ci
+      # Build application
+      - run: npm run build
+      # Run tests with coverage
+      - run: npm run cover
+        env:
+          NODE_ENV: test
+      # Deploy on GCP if tests succeeded
+      - name: Trigger next workflow
+        if: ${{ success() && github.event_name == 'push' }}
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          workflow: Push to GCR
+          token: ${{ secrets.REPO_GHA_PAT }}
+          inputs: '{"ref": "${{ github.ref }}"}'

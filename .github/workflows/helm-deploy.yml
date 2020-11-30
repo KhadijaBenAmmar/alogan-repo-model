@@ -1,0 +1,43 @@
+name: Upgrade Helm Chart
+
+on:
+  push:
+    paths:
+      - .helm/**
+    branches:
+      - master
+
+jobs:
+  deploy_helm:
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout the repository
+      - uses: actions/checkout@v2
+      # Setup the node environment
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v1
+        with:
+          node-version: 12.x
+      - name: Prepare HELM Charts
+        run: |
+          # Replace appVersion on Chart.yaml
+          APP_VERSION=$(node -p "require('./package.json').version") envsubst < .helm/${{ secrets.APP_NAME }}/Chart.yaml.tpl > .helm/${{ secrets.APP_NAME }}/Chart.yaml
+          # Show content to debug it quickly if necessary
+          cat .helm/${{ secrets.APP_NAME }}/Chart.yaml
+          # Remove chart's template
+          rm .helm/${{ secrets.APP_NAME }}/Chart.yaml.tpl
+      - name: Compress the helm package
+        uses: WyriHaximus/github-action-helm3@v2
+        with:
+          exec: |
+            export CHART_VERSION=$(cat .helm/${{ secrets.APP_NAME }}/Chart.yaml \
+              | grep version \
+              | head -1 \
+              | awk -F: '{ print $2 }' \
+              | sed 's/[",]//g')
+            helm repo add chartmuseum https://${{ secrets.USERNAME_CHART_MUSEUM }}:${{ secrets.PASSWORD_CHART_MUSEUM }}@${{ secrets.CHART_MUSEUM_URL }}
+            cd .helm/${{ secrets.APP_NAME }}; helm dep up; helm lint
+            helm package .
+            apk --no-cache add curl
+            curl --data-binary "@${{ secrets.APP_NAME }}-${CHART_VERSION//[[:blank:]]/}.tgz" https://${{ secrets.USERNAME_CHART_MUSEUM }}:${{ secrets.PASSWORD_CHART_MUSEUM }}@${{ secrets.CHART_MUSEUM_URL }}/api/charts
+            helm repo update

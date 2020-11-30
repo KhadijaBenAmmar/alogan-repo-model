@@ -1,0 +1,28 @@
+name: Preprod Deployment
+on: 
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit sha1 from where you want to deploy the application (default to latest commit on master)
+        required: true
+
+jobs:
+  update_gcr_tag:
+    name: Update GCR tag for pre-production
+    runs-on: ubuntu-latest
+    steps:
+      # Set up google credentials
+      - uses: google-github-actions/setup-gcloud@master
+        with:
+          project_id: ${{ secrets.GCLOUD_PROJECT_ID }}
+          service_account_key: ${{ secrets.GCLOUD_SA_KEY }}
+      # Configure Docker to use the gcloud command-line tool as a credential
+      # helper for authentication
+      - run: |-
+          gcloud --quiet auth configure-docker
+      # Update docker image tag
+      - run: |-
+          gcloud container images add-tag \
+            eu.gcr.io/${{ secrets.GCLOUD_PROJECT_ID }}/${{ secrets.APP_NAME }}:${{ github.event.inputs.sha }} \
+            eu.gcr.io/${{ secrets.GCLOUD_PROJECT_ID }}/${{ secrets.APP_NAME }}:preprod_${{ github.event.inputs.sha }}
+      
