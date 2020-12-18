@@ -1,11 +1,7 @@
 # This is the main workflow file. It is run every time a PR is opened or merged
 # Required env:
-# GCLOUD_SA_KEY_DEV
-# GCLOUD_SA_KEY_PREPROD
-# GCLOUD_SA_KEY_PROD
-# GCLOUD_DEV_PROJECT_ID
-# GCLOUD_PREPROD_PROJECT_ID
-# GCLOUD_PROD_PROJECT_ID
+# GCLOUD_SA_KEY
+# GCLOUD_PROJECT_ID
 # APP_NAME
 # USERNAME_CHART_MUSEUM
 # PASSWORD_CHART_MUSEUM
@@ -14,10 +10,11 @@
 
 name: Main workflow
 on:
-  - pull_request    
+  - pull_request
   - push
 jobs:
-  main_workflow:
+  build_and_test:
+    name: Run tests
     runs-on: ubuntu-latest
     steps:
       # Checkout the repository
@@ -40,11 +37,40 @@ jobs:
       - run: npm run cover
         env:
           NODE_ENV: test
-      # Deploy on GCP if tests succeeded
-      - name: Trigger next workflow
-        if: ${{ success() && github.event_name == 'push' }}
-        uses: benc-uk/workflow-dispatch@v1
+
+  algoan_dev_deployment:
+    needs: build_and_test
+    name: Build Docker image and push it to GCR
+    if: ${{ github.ref == 'refs/heads/master' && github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      # Set up google credentials
+      - uses: google-github-actions/setup-gcloud@master
         with:
-          workflow: Push to GCR
-          token: ${{ secrets.REPO_GHA_PAT }}
-          inputs: '{"ref": "${{ github.ref }}"}'
+          project_id: ${{ secrets.GCLOUD_PROJECT_ID }}
+          service_account_key: ${{ secrets.GCLOUD_SA_KEY }}
+      # Configure Docker to use the gcloud command-line tool as a credential
+      # helper for authentication
+      - run: |-
+          gcloud --quiet auth configure-docker
+      # Build the Docker image
+      - name: Build
+        run: |-
+          docker build \
+            --tag eu.gcr.io/${{ secrets.GCLOUD_PROJECT_ID }}/${APP_NAME}:${{ github.sha }} \
+            --tag eu.gcr.io/${{ secrets.GCLOUD_PROJECT_ID }}/${APP_NAME}:staging_${{ github.sha }} \
+            --build-arg NPM_TOKEN=${{ secrets.NPM_TOKEN }} \
+            .
+      # Push the docker image to GCR
+      - name: Push
+        run: docker push eu.gcr.io/${{ secrets.GCLOUD_PROJECT_ID }}/${APP_NAME}
+      - name: Slack Notification
+        uses: rtCamp/action-slack-notify@master
+        env:
+          SLACK_CHANNEL: release-management
+          SLACK_ICON_EMOJI: ':file_folder:'
+          SLACK_MESSAGE: 'The backend application "${APP_NAME}" has been pushed to GCR in `${{ secrets.GCLOUD_PROJECT_ID }}`'
+          SLACK_TITLE: Message
+          SLACK_USERNAME: algoan-bot  
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}

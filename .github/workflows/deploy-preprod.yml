@@ -23,6 +23,6 @@ jobs:
       # Update docker image tag
       - run: |-
           gcloud container images add-tag \
-            eu.gcr.io/${{ secrets.GCLOUD_PROJECT_ID }}/${{ secrets.APP_NAME }}:${{ github.event.inputs.sha }} \
-            eu.gcr.io/${{ secrets.GCLOUD_PROJECT_ID }}/${{ secrets.APP_NAME }}:preprod_${{ github.event.inputs.sha }}
+            eu.gcr.io/${{ secrets.GCLOUD_PROJECT_ID }}/${APP_NAME}:${{ github.event.inputs.sha }} \
+            eu.gcr.io/${{ secrets.GCLOUD_PROJECT_ID }}/${APP_NAME}:preprod_${{ github.event.inputs.sha }}
       
